@@ -175,21 +175,6 @@ struct ipa_mhi_client_ctx {
 static struct ipa_mhi_client_ctx *ipa_mhi_client_ctx;
 static DEFINE_MUTEX(mhi_client_general_mutex);
 
-
-static char *ipa_mhi_channel_state_str[] = {
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_DISABLE),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_ENABLE),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_RUN),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_SUSPEND),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_STOP),
-	__stringify(IPA_HW_MHI_CHANNEL_STATE_ERROR),
-};
-
-#define MHI_CH_STATE_STR(state) \
-	(((state) >= 0 && (state) <= IPA_HW_MHI_CHANNEL_STATE_ERROR) ? \
-	ipa_mhi_channel_state_str[(state)] : \
-	"INVALID")
-
 static int ipa_mhi_set_lock_unlock(bool is_lock)
 {
 	IPA_MHI_DBG("entry\n");
@@ -290,6 +275,20 @@ fail_dma_enable:
 #define IPA_MHI_MAX_MSG_LEN 512
 static char dbg_buff[IPA_MHI_MAX_MSG_LEN];
 static struct dentry *dent;
+
+static char *ipa_mhi_channel_state_str[] = {
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_DISABLE),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_ENABLE),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_RUN),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_SUSPEND),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_STOP),
+	__stringify(IPA_HW_MHI_CHANNEL_STATE_ERROR),
+};
+
+#define MHI_CH_STATE_STR(state) \
+	(((state) >= 0 && (state) <= IPA_HW_MHI_CHANNEL_STATE_ERROR) ? \
+	ipa_mhi_channel_state_str[(state)] : \
+	"INVALID")
 
 static int ipa_mhi_print_channel_info(struct ipa_mhi_channel_ctx *channel,
 	char *buff, int len)
