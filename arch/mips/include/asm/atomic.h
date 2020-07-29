@@ -22,8 +22,6 @@
 #include <asm/cmpxchg.h>
 #include <asm/war.h>
 
-#define ATOMIC_INIT(i)	  { (i) }
-
 /*
  * atomic_read - read atomic variable
  * @v: pointer of type atomic_t

@@ -24,8 +24,6 @@
 #include <linux/compiler.h>
 #include <linux/types.h>
 
-#define ATOMIC_INIT(i)	{ (i) }
-
 /**
  * atomic_read - read atomic variable
  * @v: pointer of type atomic_t

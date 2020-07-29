@@ -24,8 +24,6 @@
  * resource counting etc..
  */
 
-#define ATOMIC_INIT(i)	{ (i) }
-
 #ifdef __KERNEL__
 
 /**
