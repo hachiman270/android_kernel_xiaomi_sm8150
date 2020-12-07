@@ -224,6 +224,18 @@ config DEFAULT_HOSTNAME
 	  calls sethostname(2). The kernel traditionally uses "(none)" here,
 	  but you may wish to use a different default here to make a minimal
 	  system more usable with less configuration.
+	
+config POLLY_CLANG
+	bool "Use Clang Polly optimizations"
+	default n
+	help
+	  This option enables Clang's polyhedral loop optimizer known as
+	  Polly. Polly is able to optimize various loops throughout the
+	  kernel for cache locality. This requires a Clang toolchain
+	  compiled with support for Polly. More information can be found
+	  from Polly's website:
+
+	    https://polly.llvm.org
 
 config SWAP
 	bool "Support for paging of anonymous memory (swap)"
