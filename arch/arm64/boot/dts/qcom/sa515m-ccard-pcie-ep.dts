@@ -63,6 +63,9 @@
 };
 
 &mhi_device {
+	reg = <0x1c03000 0x1000>,
+		<0x1e15000 0x4>,
+		<0x1e15138 0x4>;
 	status = "ok";
 };
 
@@ -83,6 +86,5 @@
 	qcom,status-in-gpio = <&tlmm 76 0x00>;
 	qcom,status-out-gpio = <&tlmm 33 0x00>;
 	qcom,status-out2-gpio = <&tlmm 31 0x00>;
-	qcom,default-policy-nop;
 	status = "okay";
 };
