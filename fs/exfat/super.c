@@ -23,7 +23,7 @@
 #include <linux/nls.h>
 #include <linux/buffer_head.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 #include <linux/iversion.h>
 #endif
 
@@ -615,7 +615,7 @@ static int exfat_read_root(struct inode *inode)
 	inode->i_uid = sbi->options.fs_uid;
 	inode->i_gid = sbi->options.fs_gid;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 	inode_inc_iversion(inode);
 #else
 	inode->i_version++;
@@ -982,7 +982,7 @@ static int exfat_fill_super(struct super_block *sb, void *data, int silent)
 
 	root_inode->i_ino = EXFAT_ROOT_INO;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 	inode_set_iversion(root_inode, 1);
 #else
 	root_inode->i_version = 1;
