@@ -1401,6 +1401,20 @@ config DMI
 	  This option is only useful on systems that have UEFI firmware.
 	  However, even with this option, the resultant kernel should
 	  continue to boot on existing non-UEFI platforms.
+	
+config FIX_BOOT_CPU_LOGICAL_MAPPING
+	bool "Fix Boot CPU Logical Map Hardcoding"
+	default y
+	help
+	  This option fixes the logical cpu map of
+	  of boot cpu which is otherwise considered
+	  to be logical cpu 0.
+
+          Booting on high performance core makes the
+          core as logical cpu 0. It impacts the idle
+          power consumption of the system. This can
+	  be avoided by fixing the logical cpu map
+          hardcoding of the boot cpu.
 
 config BUILD_ARM64_APPENDED_DTB_IMAGE
 	bool "Build a concatenated Image.gz/dtb by default"

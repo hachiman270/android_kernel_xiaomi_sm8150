@@ -159,8 +159,13 @@ static int __apply_alternatives_multi_stop(void *unused)
 		.end	= (struct alt_instr *)__alt_instructions_end,
 	};
 
+#ifdef CONFIG_FIX_BOOT_CPU_LOGICAL_MAPPING
+	/* We always have a logical boot CPU at this point (__init) */
+	if (smp_processor_id() != logical_bootcpu_id) {
+#else
 	/* We always have a CPU 0 at this point (__init) */
 	if (smp_processor_id()) {
+#endif
 		while (!READ_ONCE(alternatives_applied))
 			cpu_relax();
 		isb();
