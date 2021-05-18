@@ -550,7 +550,7 @@
 	};
 
 	chosen {
-		bootargs = "cgroup_disable=pressure rcupdate.rcu_expedited=1 rcu_nocbs=0-7 cgroup.memory=nokmem,nosocket noirqdebug printk.devkmsg=on";
+		bootargs = "cgroup_disable=pressure rcupdate.rcu_expedited=1 rcu_nocbs=0-7 cgroup.memory=nokmem,nosocket noirqdebug printk.devkmsg=on quiet";
 	};
 
 	soc: soc { };
