@@ -164,7 +164,6 @@ struct attribute *nvt_panel_attr[] = {
 	NULL,
 };
 
-static uint8_t bTouchIsAwake = 0;
 /*******************************************************
 Description:
 	Novatek touchscreen irq enable/disable function.
@@ -912,25 +911,6 @@ static void nvt_flash_proc_deinit(void)
 #endif
 
 #if WAKEUP_GESTURE
-#define GESTURE_WORD_C			12
-#define GESTURE_WORD_W			13
-#define GESTURE_WORD_V			14
-#define GESTURE_DOUBLE_CLICK	15
-#define GESTURE_WORD_Z			16
-#define GESTURE_WORD_M			17
-#define GESTURE_WORD_O			18
-#define GESTURE_WORD_e			19
-#define GESTURE_WORD_S			20
-#define GESTURE_SLIDE_UP		21
-#define GESTURE_SLIDE_DOWN		22
-#define GESTURE_SLIDE_LEFT		23
-#define GESTURE_SLIDE_RIGHT		24
-/* customized gesture id */
-#define DATA_PROTOCOL			30
-
-/* function page definition */
-#define FUNCPAGE_GESTURE		1
-
 /*******************************************************
 Description:
 	Novatek touchscreen wake up gesture key report function.
@@ -938,32 +918,21 @@ Description:
 return:
 	n.a.
 *******************************************************/
-void nvt_ts_wakeup_gesture_report(uint8_t gesture_id, uint8_t *data)
+static bool nvt_ts_wakeup_gesture_report(uint8_t *data)
 {
 	uint8_t func_type = data[2];
 	uint8_t func_id = data[3];
 
-	/* support fw specifal data protocol */
-	if ((gesture_id == DATA_PROTOCOL) && (func_type == FUNCPAGE_GESTURE)) {
-		gesture_id = func_id;
-	} else if (gesture_id > DATA_PROTOCOL) {
-		NVT_ERR("gesture_id %d is invalid, func_type=%d, func_id=%d\n", gesture_id, func_type, func_id);
-		return;
+	if (ts->ic_state < NVT_IC_RESUME_IN &&
+		func_type == FUNCPAGE_GESTURE && func_id == GESTURE_DOUBLE_CLICK) {
+		input_report_key(ts->input_dev, KEY_WAKEUP, 1);
+		input_sync(ts->input_dev);
+		input_report_key(ts->input_dev, KEY_WAKEUP, 0);
+		input_sync(ts->input_dev);
+		return true;
 	}
 
-	NVT_LOG("gesture_id = %d\n", gesture_id);
-
-	switch (gesture_id) {
-		case GESTURE_DOUBLE_CLICK:
-			NVT_LOG("Gesture : Double Click.\n");
-			input_report_key(ts->input_dev, KEY_WAKEUP, 1);
-			input_sync(ts->input_dev);
-			input_report_key(ts->input_dev, KEY_WAKEUP, 0);
-			input_sync(ts->input_dev);
-			break;
-		default:
-			break;
-	}
+	return false;
 }
 #endif
 
@@ -1393,7 +1362,7 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 	int32_t finger_cnt = 0;
 
 #if WAKEUP_GESTURE
-	if (bTouchIsAwake == 0) {
+	if (ts->ic_state < NVT_IC_RESUME_IN) {
 		pm_wakeup_event(&ts->input_dev->dev, 5000);
 	}
 #endif
@@ -1455,11 +1424,8 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 #endif
 
 #if WAKEUP_GESTURE
-	if (bTouchIsAwake == 0) {
-		input_id = (uint8_t)(point_data[1] >> 3);
-		nvt_ts_wakeup_gesture_report(input_id, point_data);
-		mutex_unlock(&ts->lock);
-		return IRQ_HANDLED;
+	if (nvt_ts_wakeup_gesture_report(point_data)) {
+		goto XFER_ERROR;
 	}
 #endif
 
@@ -1713,7 +1679,7 @@ static int nvt_palm_sensor_write(int value)
 		return 0;
 	}
 
-	if (bTouchIsAwake)
+	if (ts->ic_state > NVT_IC_SUSPEND_OUT)
 		ret = nvt_set_pocket_palm_switch(value);
 	return ret;
 }
@@ -2572,7 +2538,6 @@ static int32_t nvt_ts_probe(struct platform_device *pdev)
 			xiaomitouch_register_modedata(&xiaomi_touch_interfaces);
 #endif
 
-	bTouchIsAwake = 1;
 	NVT_LOG("end\n");
 
 	nvt_irq_enable(true);
@@ -2796,7 +2761,7 @@ static int32_t nvt_ts_suspend(struct device *dev)
 	uint32_t i = 0;
 #endif
 	int ret = 0;
-	if (!bTouchIsAwake) {
+	if (ts->ic_state < NVT_IC_RESUME_IN) {
 		NVT_LOG("Touch is already suspend\n");
 		return 0;
 	}
@@ -2815,7 +2780,6 @@ static int32_t nvt_ts_suspend(struct device *dev)
 		nvt_irq_enable(false);	/*must before hold lock*/
 
 	mutex_lock(&ts->lock);
-	bTouchIsAwake = 0;
 
 #ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 	if (ts->palm_sensor_switch) {
@@ -2903,7 +2867,7 @@ static int32_t nvt_ts_resume(struct device *dev)
 			NVT_ERR("Failed to init pinctrl\n");
 		}
 	}
-	if (bTouchIsAwake) {
+	if (ts->ic_state > NVT_IC_SUSPEND_OUT) {
 		NVT_LOG("Touch is already resume\n");
 #if NVT_TOUCH_WDT_RECOVERY
 		mutex_lock(&ts->lock);
@@ -2948,7 +2912,6 @@ static int32_t nvt_ts_resume(struct device *dev)
 			msecs_to_jiffies(NVT_TOUCH_ESD_CHECK_PERIOD));
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
 
-	bTouchIsAwake = 1;
 #ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
 	NVT_LOG("palm_sensor_switch=%d", ts->palm_sensor_switch);
 	if (ts->palm_sensor_switch) {
