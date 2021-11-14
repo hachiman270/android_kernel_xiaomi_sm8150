@@ -417,6 +417,7 @@ struct usbpd {
 	bool			peer_pr_swap;
 	bool			peer_dr_swap;
 	bool			no_usb3dp_concurrency;
+	bool			pd20_source_only;
 
 	u32			sink_caps[7];
 	int			num_sink_caps;
@@ -711,6 +712,7 @@ static inline void pd_reset_protocol(struct usbpd *pd)
 	memset(pd->rx_msgid, -1, sizeof(pd->rx_msgid));
 	memset(pd->tx_msgid, 0, sizeof(pd->tx_msgid));
 	pd->send_request = false;
+	pd->send_get_status = false;
 	pd->send_pr_swap = false;
 	pd->send_dr_swap = false;
 }
@@ -1399,7 +1401,10 @@ static void usbpd_set_state(struct usbpd *pd, enum usbpd_state next_state)
 			 * support up to PD 3.0; if peer is 2.0
 			 * phy_msg_received() will handle the downgrade.
 			 */
-			pd->spec_rev = USBPD_REV_30;
+			if (pd->pd20_source_only)
+				pd->spec_rev = USBPD_REV_20;
+			else
+				pd->spec_rev = USBPD_REV_30;
 
 			if (pd->pd_phy_opened) {
 				pd_phy_close();
@@ -2585,6 +2590,7 @@ static void usbpd_sm(struct work_struct *w)
 		pd->forced_pr = POWER_SUPPLY_TYPEC_PR_NONE;
 
 		pd->current_state = PE_UNKNOWN;
+		pd_reset_protocol(pd);
 
 		kobject_uevent(&pd->dev.kobj, KOBJ_CHANGE);
 		dual_role_instance_changed(pd->dual_role);
@@ -2698,7 +2704,10 @@ static void usbpd_sm(struct work_struct *w)
 		 * Emarker may have negotiated down to rev 2.0.
 		 * Reset to 3.0 to begin SOP communication with sink
 		 */
-		pd->spec_rev = USBPD_REV_30;
+		if (pd->pd20_source_only)
+			pd->spec_rev = USBPD_REV_20;
+		else
+			pd->spec_rev = USBPD_REV_30;
 
 		pd->current_state = PE_SRC_SEND_CAPABILITIES;
 		kick_sm(pd, ms);
@@ -4645,6 +4654,10 @@ struct usbpd *usbpd_create(struct device *parent)
 
 	if (device_property_read_bool(parent, "qcom,no-usb3-dp-concurrency"))
 		pd->no_usb3dp_concurrency = true;
+
+	if (device_property_read_bool(parent, "qcom,pd-20-source-only"))
+		pd->pd20_source_only = true;
+
 	/*
 	 * Register the Android dual-role class (/sys/class/dual_role_usb/).
 	 * The first instance should be named "otg_default" as that's what
