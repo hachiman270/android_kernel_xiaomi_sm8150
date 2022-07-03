@@ -210,19 +210,17 @@ out:
 static void ufs_qcom_phy_qmp_v4_dbg_register_dump(struct ufs_qcom_phy *phy)
 {
 	ufs_qcom_phy_dump_regs(phy, COM_BASE, COM_SIZE,
-					"QSERDES_COM_UFS_QMP_PLL ");
-	ufs_qcom_phy_dump_regs(phy, PHY_PCS2_BASE, PHY_PCS2_SIZE,
-					"UFS_PHY_UFS_PCS_2 ");
+					"PHY QSERDES COM Registers ");
 	ufs_qcom_phy_dump_regs(phy, PHY_BASE, PHY_SIZE,
-					"UFS_PHY_UFS_PCS ");
+					"PHY Registers ");
 	ufs_qcom_phy_dump_regs(phy, RX_BASE(0), RX_SIZE,
-					"QSERDES_RX0_UFS_QMP_RX ");
+					"PHY RX0 Registers ");
 	ufs_qcom_phy_dump_regs(phy, TX_BASE(0), TX_SIZE,
-					"QSERDES_TX0_UFS_QMP_TX ");
+					"PHY TX0 Registers ");
 	ufs_qcom_phy_dump_regs(phy, RX_BASE(1), RX_SIZE,
-					"QSERDES_RX1_UFS_QMP_RX ");
+					"PHY RX1 Registers ");
 	ufs_qcom_phy_dump_regs(phy, TX_BASE(1), TX_SIZE,
-					"QSERDES_TX1_UFS_QMP_TX ");
+					"PHY TX1 Registers ");
 }
 
 struct phy_ops ufs_qcom_phy_qmp_v4_phy_ops = {

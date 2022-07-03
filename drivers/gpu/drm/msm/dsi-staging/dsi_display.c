@@ -18,7 +18,6 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/err.h>
-#include <linux/msm_drm_notify.h>
 
 #include "msm_drv.h"
 #include "sde_connector.h"
@@ -59,14 +58,6 @@ static const struct of_device_id dsi_display_dt_match[] = {
 	{.compatible = "qcom,dsi-display"},
 	{}
 };
-
-struct dsi_display *primary_display;
-struct dsi_display *get_primary_display(void)
-{
-	return primary_display;
-}
-
-EXPORT_SYMBOL(get_primary_display);
 
 static void dsi_display_mask_ctrl_error_interrupts(struct dsi_display *display,
 			u32 mask, bool enable)
@@ -198,7 +189,6 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 {
 	struct dsi_display *dsi_display = display;
 	struct dsi_panel *panel;
-	struct drm_device *drm_dev;
 	u32 bl_scale, bl_scale_ad;
 	u64 bl_temp;
 	int rc = 0;
@@ -207,7 +197,6 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 		return -EINVAL;
 
 	panel = dsi_display->panel;
-	drm_dev = dsi_display->drm_dev;
 
 	mutex_lock(&panel->panel_lock);
 	if (!dsi_panel_initialized(panel)) {
@@ -252,10 +241,7 @@ error:
 	return rc;
 }
 
-#if 0
 static int dsi_display_cmd_engine_enable(struct dsi_display *display)
-#endif
-int dsi_display_cmd_engine_enable(struct dsi_display *display)
 {
 	int rc = 0;
 	int i;
@@ -299,10 +285,7 @@ done:
 	return rc;
 }
 
-#if 0
 static int dsi_display_cmd_engine_disable(struct dsi_display *display)
-#endif
-int dsi_display_cmd_engine_disable(struct dsi_display *display)
 {
 	int rc = 0;
 	int i;
@@ -488,10 +471,7 @@ error:
 }
 
 /* Allocate memory for cmd dma tx buffer */
-#if 0
 static int dsi_host_alloc_cmd_tx_buffer(struct dsi_display *display)
-#endif
-int dsi_host_alloc_cmd_tx_buffer(struct dsi_display *display)
 {
 	int rc = 0, cnt = 0;
 	struct dsi_display_ctrl *display_ctrl;
@@ -1079,42 +1059,23 @@ int dsi_display_set_power(struct drm_connector *connector,
 {
 	struct dsi_display *display = disp;
 	int rc = 0;
-	struct msm_drm_notifier g_notify_data;
-	struct drm_device *dev = NULL;
-	int event = 0;
 
 	if (!display || !display->panel) {
 		pr_err("invalid display/panel\n");
 		return -EINVAL;
 	}
 
-	if (!connector || !connector->dev) {
-		pr_err("invalid connector/dev\n");
-		return -EINVAL;
-	}
-	dev = connector->dev;
-	event = dev->doze_state;
-	g_notify_data.data = &event;
-
 	switch (power_mode) {
 	case SDE_MODE_DPMS_LP1:
-		msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK, &g_notify_data);
 		rc = dsi_panel_set_lp1(display->panel);
-		msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK, &g_notify_data);
 		break;
 	case SDE_MODE_DPMS_LP2:
-		msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK, &g_notify_data);
 		rc = dsi_panel_set_lp2(display->panel);
-		msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK, &g_notify_data);
 		break;
 	case SDE_MODE_DPMS_ON:
 		if (display->panel->power_mode == SDE_MODE_DPMS_LP1 ||
 			display->panel->power_mode == SDE_MODE_DPMS_LP2)
-		{
-			msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK, &g_notify_data);
 			rc = dsi_panel_set_nolp(display->panel);
-			msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK, &g_notify_data);
-		}
 		break;
 	case SDE_MODE_DPMS_OFF:
 	default:
@@ -5071,128 +5032,10 @@ error:
 	return rc;
 }
 
-static ssize_t sysfs_hbm_read(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct dsi_display *display = dev_get_drvdata(dev);
-	if (!display->panel)
-		return 0;
-
-	return scnprintf(buf, PAGE_SIZE, "%d\n", display->panel->hbm_mode);
-}
-
-static ssize_t sysfs_hbm_write(struct device *dev,
-	    struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct dsi_display *display = dev_get_drvdata(dev);
-	int ret, hbm_mode;
-
-	if (!display->panel)
-		return -EINVAL;
-
-	ret = kstrtoint(buf, 10, &hbm_mode);
-	if (ret) {
-		pr_err("kstrtoint failed. ret=%d\n", ret);
-		return ret;
-	}
-
-	mutex_lock(&display->display_lock);
-
-	display->panel->hbm_mode = hbm_mode;
-	if (!dsi_panel_initialized(display->panel))
-		goto error;
-
-	ret = dsi_display_clk_ctrl(display->dsi_clk_handle,
-			DSI_CORE_CLK, DSI_CLK_ON);
-	if (ret) {
-		pr_err("[%s] failed to enable DSI core clocks, rc=%d\n",
-		       display->name, ret);
-		goto error;
-	}
-
-	ret = dsi_panel_apply_hbm_mode(display->panel);
-	if (ret)
-		pr_err("unable to set hbm mode\n");
-
-	ret = dsi_display_clk_ctrl(display->dsi_clk_handle,
-			DSI_CORE_CLK, DSI_CLK_OFF);
-	if (ret) {
-		pr_err("[%s] failed to disable DSI core clocks, rc=%d\n",
-		       display->name, ret);
-		goto error;
-	}
-
-error:
-	mutex_unlock(&display->display_lock);
-	return ret == 0 ? count : ret;
-}
-
-static ssize_t sysfs_cabc_read(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct dsi_display *display = dev_get_drvdata(dev);
-	if (!display->panel)
-		return 0;
-
-	return scnprintf(buf, PAGE_SIZE, "%d\n", display->panel->cabc_mode);
-}
-
-static ssize_t sysfs_cabc_write(struct device *dev,
-	    struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct dsi_display *display = dev_get_drvdata(dev);
-	int ret, cabc_mode;
-
-	if (!display->panel)
-		return -EINVAL;
-
-	ret = kstrtoint(buf, 10, &cabc_mode);
-	if (ret) {
-		pr_err("kstrtoint failed. ret=%d\n", ret);
-		return ret;
-	}
-
-	mutex_lock(&display->display_lock);
-
-	display->panel->cabc_mode = cabc_mode;
-	if (!dsi_panel_initialized(display->panel))
-		goto error;
-
-	ret = dsi_panel_apply_cabc_mode(display->panel);
-	if (ret)
-		pr_err("unable to set cabc mode\n");
-
-error:
-	mutex_unlock(&display->display_lock);
-	return ret == 0 ? count : ret;
-}
-
-static DEVICE_ATTR(hbm, 0644,
-			sysfs_hbm_read,
-			sysfs_hbm_write);
-
-static DEVICE_ATTR(cabc, 0644,
-			sysfs_cabc_read,
-			sysfs_cabc_write);
-
-static struct attribute *display_fs_attrs[] = {
-	&dev_attr_hbm.attr,
-	&dev_attr_cabc.attr,
-	NULL,
-};
-
-static struct attribute_group display_fs_attrs_group = {
-	.attrs = display_fs_attrs,
-};
-
 static int dsi_display_sysfs_init(struct dsi_display *display)
 {
 	int rc = 0;
 	struct device *dev = &display->pdev->dev;
-
-	rc = sysfs_create_group(&dev->kobj, &display_fs_attrs_group);
-	if (rc)
-		pr_err("failed to create display device attributes");
 
 	if (display->panel->panel_mode == DSI_OP_CMD_MODE)
 		rc = sysfs_create_group(&dev->kobj,
@@ -5642,8 +5485,6 @@ int dsi_display_dev_probe(struct platform_device *pdev)
 	display->pdev = pdev;
 	display->boot_disp = boot_disp;
 	display->dsi_type = dsi_type;
-	display->is_prim_display = true;
-	display->is_first_boot = true;
 
 	dsi_display_parse_cmdline_topology(display, index);
 
@@ -6563,7 +6404,6 @@ int dsi_display_get_modes(struct dsi_display *display,
 exit:
 	*out_modes = display->modes;
 	rc = 0;
-	primary_display = display;
 
 error:
 	if (rc)
@@ -7653,7 +7493,6 @@ int dsi_display_enable(struct dsi_display *display)
 {
 	int rc = 0;
 	struct dsi_display_mode *mode;
-	struct dsi_panel *panel;
 
 	if (!display || !display->panel) {
 		pr_err("Invalid params\n");
@@ -7665,7 +7504,6 @@ int dsi_display_enable(struct dsi_display *display)
 		return -EINVAL;
 	}
 	SDE_EVT32(SDE_EVTLOG_FUNC_ENTRY);
-	panel = display->panel;
 
 	/* Engine states and panel states are populated during splash
 	 * resource init and hence we return early

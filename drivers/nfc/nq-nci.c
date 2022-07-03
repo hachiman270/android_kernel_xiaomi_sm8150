@@ -153,18 +153,15 @@ static irqreturn_t nqx_dev_irq_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-#if 0
 static int is_data_available_for_read(struct nqx_dev *nqx_dev)
 {
 	int ret;
-	return 0;
 
 	nqx_enable_irq(nqx_dev);
 	ret = wait_event_interruptible_timeout(nqx_dev->read_wq,
 		!nqx_dev->irq_enabled, msecs_to_jiffies(MAX_IRQ_WAIT_TIME));
 	return ret;
 }
-#endif
 
 static ssize_t nfc_read(struct file *filp, char __user *buf,
 					size_t count, loff_t *offset)
@@ -753,17 +750,18 @@ static long nfc_ioctl(struct file *pfile, unsigned int cmd,
 		r = nfc_ioctl_power_states(pfile, arg);
 		break;
 	case ESE_SET_PWR:
-		if (0)
+		if ((nqx_dev->nqx_info.info.chip_type == NFCC_SN100_A) ||
+			(nqx_dev->nqx_info.info.chip_type == NFCC_SN100_B))
 			r = sn100_ese_pwr(nqx_dev, arg);
 		else
 			r = nqx_ese_pwr(nqx_dev, arg);
 		break;
 	case ESE_GET_PWR:
-		if (0)
+		if ((nqx_dev->nqx_info.info.chip_type == NFCC_SN100_A) ||
+			(nqx_dev->nqx_info.info.chip_type == NFCC_SN100_B))
 			r = sn100_ese_pwr(nqx_dev, 3);
 		else
 			r = nqx_ese_pwr(nqx_dev, 3);
-		break;
 		break;
 	case SET_RX_BLOCK:
 		break;
@@ -794,7 +792,6 @@ static const struct file_operations nfc_dev_fops = {
 #endif
 };
 
-#if 0
 /*
  * function: get_nfcc_hw_info()
  *
@@ -923,14 +920,11 @@ err_nfcc_hw_info:
 
 	return ret;
 }
-#endif
 
-#if 0
 /* Check for availability of NQ_ NFC controller hardware */
 static int nfcc_hw_check(struct i2c_client *client, struct nqx_dev *nqx_dev)
 {
 	int ret = 0;
-	return ret;
 
 	unsigned int enable_gpio = nqx_dev->en_gpio;
 	char *nci_reset_cmd = NULL;
@@ -1118,7 +1112,6 @@ done:
 
 	return ret;
 }
-#endif
 
 /*
  * Routine to enable clock.
@@ -1438,7 +1431,7 @@ static int nqx_probe(struct i2c_client *client,
 	/* NFC_INT IRQ */
 	nqx_dev->irq_enabled = true;
 	r = request_irq(client->irq, nqx_dev_irq_handler,
-			  IRQF_TRIGGER_RISING, client->name, nqx_dev);
+			  IRQF_TRIGGER_HIGH, client->name, nqx_dev);
 	if (r) {
 		dev_err(&client->dev, "%s: request_irq failed\n", __func__);
 		goto err_request_irq_failed;
@@ -1450,7 +1443,6 @@ static int nqx_probe(struct i2c_client *client,
 	 * present before attempting further hardware initialisation.
 	 *
 	 */
-#if 0
 	r = nfcc_hw_check(client, nqx_dev);
 	if (r) {
 		/* make sure NFCC is not enabled */
@@ -1458,7 +1450,6 @@ static int nqx_probe(struct i2c_client *client,
 		/* We don't think there is hardware switch NFC OFF */
 		goto err_request_hw_check_failed;
 	}
-#endif
 
 	/* Register reboot notifier here */
 	r = register_reboot_notifier(&nfcc_notifier);
@@ -1627,11 +1618,8 @@ static int nfcc_reboot(struct notifier_block *notifier, unsigned long val,
 /*
  * module load/unload record keeping
  */
-extern char *saved_command_line;
 static int __init nqx_dev_init(void)
 {
-	if (strstr(saved_command_line, "androidboot.product.hardware.sku=bhima"))
-		return -1;
 	return i2c_add_driver(&nqx);
 }
 module_init(nqx_dev_init);
