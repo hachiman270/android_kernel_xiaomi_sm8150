@@ -54,12 +54,12 @@ static inline void kzerod_update_wmark(void)
 	static unsigned long kzerod_totalram_pages = 0;
 	int i, array_size;
 
-	if (!kzerod_totalram_pages || kzerod_totalram_pages != totalram_pages) {
-		kzerod_totalram_pages = totalram_pages;
+	if (!kzerod_totalram_pages || kzerod_totalram_pages != totalram_pages()) {
+		kzerod_totalram_pages = totalram_pages();
 
 		array_size = ARRAY_SIZE(kzerod_totalram);
 		for (i = 0; i < array_size; i++) {
-			if (totalram_pages <= kzerod_totalram[i]) {
+			if (totalram_pages() <= kzerod_totalram[i]) {
 				kzerod_wmark_high = kzerod_wmark[i];
 				break;
 			}
