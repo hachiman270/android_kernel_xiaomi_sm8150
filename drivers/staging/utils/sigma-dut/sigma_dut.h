@@ -2,7 +2,7 @@
  * Sigma Control API DUT (station/AP)
  * Copyright (c) 2010-2011, Atheros Communications, Inc.
  * Copyright (c) 2011-2017, Qualcomm Atheros, Inc.
- * Copyright (c) 2018-2019, The Linux Foundation
+ * Copyright (c) 2018-2021, The Linux Foundation
  * All Rights Reserved.
  * Licensed under the Clear BSD license. See README for more details.
  */
@@ -15,6 +15,7 @@
 #endif
 
 #include <stdlib.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -31,9 +32,7 @@
 #endif /* __QNXNTO__ */
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#ifdef CONFIG_TRAFFIC_AGENT
 #include <pthread.h>
-#endif /* CONFIG_TRAFFIC_AGENT */
 #ifdef NL80211_SUPPORT
 #include <netlink/genl/family.h>
 #include <netlink/genl/ctrl.h>
@@ -87,10 +86,6 @@
 #define ETH_P_ARP 0x0806
 #endif
 
-#ifndef ARRAY_SIZE
-#define ARRAY_SIZE(x) (sizeof((x)) / (sizeof(((x)[0]))))
-#endif
-
 #define IPV6_ADDR_LEN 16
 
 struct sigma_dut;
@@ -128,6 +123,8 @@ struct dut_hw_modes {
 	u8 ampdu_params;
 	u32 vht_capab;
 	u8 vht_mcs_set[8];
+	u8 ap_he_phy_capab[11];
+	bool valid;
 };
 
 #define WPA_GET_BE32(a) ((((u32) (a)[0]) << 24) | (((u32) (a)[1]) << 16) | \
@@ -334,6 +331,7 @@ struct nl80211_ctx {
 	int netlink_familyid;
 	int nlctrl_familyid;
 	size_t sock_buf_size;
+	struct nl_sock *event_sock;
 };
 #endif /* NL80211_SUPPORT */
 
@@ -362,6 +360,49 @@ enum akm_suite_values {
 
 };
 
+enum ip_version {
+	DEFAULT_IP_VERSION = 0,
+	IPV4 = 4,
+	IPV6 = 6,
+};
+
+enum ip_protocol {
+	DEFAULT_PROTOCOL = 0,
+	PROTOCOL_UDP = 17,
+	PROTOCOL_TCP = 6,
+	PROTOCOL_ESP = 50,
+};
+
+#define DSCP_POLICY_SUCCESS 0
+#define DSCP_POLICY_REJECT 1
+
+struct dscp_policy_status {
+	int id;
+	int status;
+};
+
+struct dscp_policy_data {
+	char domain_name[250];
+	int policy_id;
+	enum ip_version ip_version;
+	char src_ip[INET6_ADDRSTRLEN];
+	char dst_ip[INET6_ADDRSTRLEN];
+	int src_port;
+	int dst_port;
+	int start_port;
+	int end_port;
+	enum ip_protocol protocol;
+	int dscp;
+	int granularity_score;
+	struct dscp_policy_data *next;
+};
+
+enum dpp_mdns_role {
+	DPP_MDNS_NOT_RUNNING,
+	DPP_MDNS_RELAY,
+	DPP_MDNS_CONTROLLER,
+};
+
 struct sigma_dut {
 	const char *main_ifname;
 	char *main_ifname_2g;
@@ -371,6 +412,7 @@ struct sigma_dut {
 	char *station_ifname_5g;
 	char *p2p_ifname_buf;
 	int use_5g;
+	int ap_band_6g;
 	int sta_2g_started;
 	int sta_5g_started;
 
@@ -475,6 +517,7 @@ struct sigma_dut {
 		AP_inval
 	} ap_mode;
 	int ap_channel;
+	int ap_tag_channel[MAX_WLAN_TAGS - 1];
 	int ap_rts;
 	int ap_frgmnt;
 	int ap_bcnint;
@@ -511,7 +554,7 @@ struct sigma_dut {
 	} ap_chwidth;
 	enum ap_chwidth default_11na_ap_chwidth;
 	enum ap_chwidth default_11ng_ap_chwidth;
-	int ap_tx_stbc;
+	enum value_not_set_enabled_disabled ap_tx_stbc;
 	enum value_not_set_enabled_disabled ap_dyn_bw_sig;
 	int ap_sgi80;
 	int ap_p2p_mgmt;
@@ -575,6 +618,7 @@ struct sigma_dut {
 	int ap_sae_pk_omit;
 	int sae_confirm_immediate;
 	char ap_passphrase[101];
+	char ap_tag_passphrase[MAX_WLAN_TAGS - 1][101];
 	char ap_psk[65];
 	char *ap_sae_passwords;
 	char *ap_sae_pk_modifier;
@@ -855,6 +899,7 @@ struct sigma_dut {
 		PROGRAM_HE,
 		PROGRAM_HS2_R3,
 		PROGRAM_QM,
+		PROGRAM_HS2_R4,
 	} program;
 
 	enum device_type {
@@ -950,6 +995,7 @@ struct sigma_dut {
 	int dpp_local_bootstrap;
 	int dpp_conf_id;
 	int dpp_network_id;
+	enum dpp_mdns_role dpp_mdns;
 
 	u8 fils_hlp;
 	pthread_t hlp_thread;
@@ -960,6 +1006,8 @@ struct sigma_dut {
 #endif /* NL80211_SUPPORT */
 
 	int sta_nss;
+
+	int sta_async_twt_supp; /* Asynchronous TWT response event support */
 
 #ifdef ANDROID
 	int nanservicediscoveryinprogress;
@@ -989,6 +1037,20 @@ struct sigma_dut {
 	int client_privacy_default;
 	int saquery_oci_freq;
 	char device_driver[32];
+	int user_config_ap_ocvc;
+	int user_config_ap_beacon_prot;
+	char qm_domain_name[250];
+	struct dscp_policy_data *dscp_policy_table;
+	pthread_t dscp_policy_mon_thread;
+	int reject_dscp_policies;
+	int dscp_reject_resp_code;
+	struct dscp_policy_status dscp_status[5];
+	unsigned int num_dscp_status;
+	unsigned int prev_disable_scs_support;
+	unsigned int prev_disable_mscs_support;
+	int dscp_use_iptables;
+	int autoconnect_default;
+	int dhcp_client_running;
 };
 
 
@@ -1013,6 +1075,7 @@ void send_resp(struct sigma_dut *dut, struct sigma_conn *conn,
 const char * get_param(struct sigma_cmd *cmd, const char *name);
 const char * get_param_indexed(struct sigma_cmd *cmd, const char *name,
 			       int index);
+const char * get_param_fmt(struct sigma_cmd *cmd, const char *name, ...);
 
 int sigma_dut_reg_cmd(const char *cmd,
 		      int (*validate)(struct sigma_cmd *cmd),
@@ -1102,6 +1165,7 @@ enum sigma_cmd_result cmd_ap_config_commit(struct sigma_dut *dut,
 int ap_wps_registration(struct sigma_dut *dut, struct sigma_conn *conn,
 			struct sigma_cmd *cmd);
 const char * get_hostapd_ifname(struct sigma_dut *dut);
+void get_wiphy_capabilities(struct sigma_dut *dut);
 
 /* sta.c */
 void sta_register_cmds(void);
@@ -1128,10 +1192,13 @@ int sta_extract_60g_ese(struct sigma_dut *dut, struct sigma_cmd *cmd,
 int wil6210_set_force_mcs(struct sigma_dut *dut, int force, int mcs);
 int sta_set_addba_buf_size(struct sigma_dut *dut,
 			   const char *intf, int bufsize);
+int wcn_set_he_gi(struct sigma_dut *dut, const char *intf, u8 gi_val);
 #ifdef NL80211_SUPPORT
 int wcn_set_he_ltf(struct sigma_dut *dut, const char *intf,
 		   enum qca_wlan_he_ltf_cfg ltf);
 #endif /* NL80211_SUPPORT */
+void stop_dscp_policy_mon_thread(struct sigma_dut *dut);
+void free_dscp_policy_table(struct sigma_dut *dut);
 
 /* p2p.c */
 void p2p_register_cmds(void);
@@ -1164,6 +1231,7 @@ int is_ipv6_addr(const char *str);
 void convert_mac_addr_to_ipv6_lladdr(u8 *mac_addr, char *ipv6_buf,
 				     size_t buf_len);
 size_t convert_mac_addr_to_ipv6_linklocal(const u8 *mac_addr, u8 *ipv6);
+int snprintf_error(size_t size, int res);
 
 #ifndef ANDROID
 size_t strlcpy(char *dest, const char *src, size_t siz);
@@ -1176,6 +1244,7 @@ void str_remove_chars(char *str, char ch);
 
 int get_wps_forced_version(struct sigma_dut *dut, const char *str);
 int base64_encode(const char *src, size_t len, char *out, size_t out_len);
+unsigned char * base64_decode(const char *src, size_t len, size_t *out_len);
 int random_get_bytes(char *buf, size_t len);
 int get_enable_disable(const char *val);
 int wcn_driver_cmd(const char *ifname, char *buf);
@@ -1217,6 +1286,9 @@ int lowi_cmd_sta_reset_default(struct sigma_dut *dut, struct sigma_conn *conn,
 enum sigma_cmd_result dpp_dev_exec_action(struct sigma_dut *dut,
 					  struct sigma_conn *conn,
 					  struct sigma_cmd *cmd);
+int dpp_mdns_discover_relay_params(struct sigma_dut *dut);
+int dpp_mdns_start(struct sigma_dut *dut, enum dpp_mdns_role role);
+void dpp_mdns_stop(struct sigma_dut *dut);
 
 /* dhcp.c */
 void process_fils_hlp(struct sigma_dut *dut);
@@ -1225,6 +1297,8 @@ void hlp_thread_cleanup(struct sigma_dut *dut);
 #ifdef NL80211_SUPPORT
 struct nl80211_ctx * nl80211_init(struct sigma_dut *dut);
 void nl80211_deinit(struct sigma_dut *dut, struct nl80211_ctx *ctx);
+int nl80211_open_event_sock(struct sigma_dut *dut);
+void nl80211_close_event_sock(struct sigma_dut *dut);
 struct nl_msg * nl80211_drv_msg(struct sigma_dut *dut, struct nl80211_ctx *ctx,
 				int ifindex, int flags,
 				uint8_t cmd);
@@ -1250,5 +1324,6 @@ void server_register_cmds(void);
 void miracast_register_cmds(void);
 int set_ipv6_addr(struct sigma_dut *dut, const char *ip, const char *mask,
 		  const char *ifname);
+void kill_pid(struct sigma_dut *dut, const char *pid_file);
 
 #endif /* SIGMA_DUT_H */
