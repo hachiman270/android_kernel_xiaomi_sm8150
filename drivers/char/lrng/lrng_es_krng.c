@@ -23,17 +23,12 @@ MODULE_PARM_DESC(krng_entropy, "Entropy in bits of 256 data bits from the kernel
 
 static atomic_t lrng_krng_initial_rate = ATOMIC_INIT(0);
 
-static struct random_ready_callback lrng_krng_ready = {
-	.owner = THIS_MODULE,
-	.func = NULL,
-};
-
 static u32 lrng_krng_fips_entropylevel(u32 entropylevel)
 {
 	return fips_enabled ? 0 : entropylevel;
 }
 
-static void lrng_krng_adjust_entropy(struct random_ready_callback *rdy)
+static int lrng_krng_adjust_entropy(void)
 {
 	u32 entropylevel;
 
@@ -49,27 +44,11 @@ static void lrng_krng_adjust_entropy(struct random_ready_callback *rdy)
 
 static u32 lrng_krng_entropylevel(u32 requested_bits)
 {
-	if (lrng_krng_ready.func == NULL) {
-		int err;
+	static bool init = false;
 
-		lrng_krng_ready.func = lrng_krng_adjust_entropy;
-
-		err = add_random_ready_callback(&lrng_krng_ready);
-		switch (err) {
-		case 0:
-			atomic_set(&lrng_krng_initial_rate, krng_entropy);
-			krng_entropy = 0;
-			pr_debug("Kernel RNG is not yet seeded, setting entropy rate to 0 bits of entropy\n");
-			break;
-
-		case -EALREADY:
-			pr_debug("Kernel RNG is fully seeded, setting entropy rate to %u bits of entropy\n",
-				 lrng_krng_fips_entropylevel(krng_entropy));
-			break;
-		default:
-			lrng_krng_ready.func = NULL;
-			return 0;
-		}
+	if (unlikely(!init) && rng_is_initialized()) {
+		init = true;
+		lrng_krng_adjust_entropy();
 	}
 
 	return lrng_fast_noise_entropylevel(
