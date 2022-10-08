@@ -2269,6 +2269,11 @@ CONFIG_LRNG_SYSCTL=y
 CONFIG_LRNG_RANDOM_IF=y
 
 #
+# Specific DRNG seeding strategies
+#
+CONFIG_LRNG_AIS2031_NTG1_SEEDING_STRATEGY=y
+
+#
 # LRNG Interfaces
 #
 # CONFIG_LRNG_KCAPI_IF is not set
