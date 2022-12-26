@@ -1,7 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
 /* ******************************************************************
  * huff0 huffman decoder,
  * part of Finite State Entropy library
- * Copyright (c) Yann Collet, Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  *  You can contact the author at :
  *  - FSE+HUF source repository : https://github.com/Cyan4973/FiniteStateEntropy
@@ -23,6 +24,7 @@
 #include "../common/huf.h"
 #include "../common/error_private.h"
 #include "../common/zstd_internal.h"
+#include "../common/bits.h"       /* ZSTD_highbit32, ZSTD_countTrailingZeros64 */
 
 /* **************************************************************
 *  Constants
@@ -138,7 +140,7 @@ static DTableDesc HUF_getDTableDesc(const HUF_DTable* table)
 
 static size_t HUF_initDStream(BYTE const* ip) {
     BYTE const lastByte = ip[7];
-    size_t const bitsConsumed = lastByte ? 8 - BIT_highbit32(lastByte) : 0;
+    size_t const bitsConsumed = lastByte ? 8 - ZSTD_highbit32(lastByte) : 0;
     size_t const value = MEM_readLEST(ip) | 1;
     assert(bitsConsumed <= 8);
     return value << bitsConsumed;
@@ -258,8 +260,9 @@ static size_t HUF_initRemainingDStream(BIT_DStream_t* bit, HUF_DecompressAsmArgs
         return ERROR(corruption_detected);
 
     /* Construct the BIT_DStream_t. */
+    assert(sizeof(size_t) == 8);
     bit->bitContainer = MEM_readLE64(args->ip[stream]);
-    bit->bitsConsumed = ZSTD_countTrailingZeros((size_t)args->bits[stream]);
+    bit->bitsConsumed = ZSTD_countTrailingZeros64(args->bits[stream]);
     bit->start = (const char*)args->iend[0];
     bit->limitPtr = bit->start + sizeof(size_t);
     bit->ptr = (const char*)args->ip[stream];
@@ -283,10 +286,11 @@ typedef struct { BYTE nbBits; BYTE byte; } HUF_DEltX1;   /* single-symbol decodi
 static U64 HUF_DEltX1_set4(BYTE symbol, BYTE nbBits) {
     U64 D4;
     if (MEM_isLittleEndian()) {
-        D4 = (symbol << 8) + nbBits;
+        D4 = (U64)((symbol << 8) + nbBits);
     } else {
-        D4 = symbol + (nbBits << 8);
+        D4 = (U64)(symbol + (nbBits << 8));
     }
+    assert(D4 < (1U << 16));
     D4 *= 0x0001000100010001ULL;
     return D4;
 }
@@ -377,9 +381,8 @@ size_t HUF_readDTableX1_wksp_bmi2(HUF_DTable* DTable, const void* src, size_t sr
      * rankStart[0] is not filled because there are no entries in the table for
      * weight 0.
      */
-    {
-        int n;
-        int nextRankStart = 0;
+    {   int n;
+        U32 nextRankStart = 0;
         int const unroll = 4;
         int const nLimit = (int)nbSymbols - unroll + 1;
         for (n=0; n<(int)tableLog+1; n++) {
@@ -406,10 +409,9 @@ size_t HUF_readDTableX1_wksp_bmi2(HUF_DTable* DTable, const void* src, size_t sr
      * We can switch based on the length to a different inner loop which is
      * optimized for that particular case.
      */
-    {
-        U32 w;
-        int symbol=wksp->rankVal[0];
-        int rankStart=0;
+    {   U32 w;
+        int symbol = wksp->rankVal[0];
+        int rankStart = 0;
         for (w=1; w<tableLog+1; ++w) {
             int const symbolCount = wksp->rankVal[w];
             int const length = (1 << w) >> 1;
@@ -519,7 +521,7 @@ HUF_decodeStreamX1(BYTE* p, BIT_DStream_t* const bitDPtr, BYTE* const pEnd, cons
     while (p < pEnd)
         HUF_DECODE_SYMBOLX1_0(p, bitDPtr);
 
-    return pEnd-pStart;
+    return (size_t)(pEnd-pStart);
 }
 
 FORCE_INLINE_TEMPLATE size_t
@@ -545,6 +547,10 @@ HUF_decompress1X1_usingDTable_internal_body(
     return dstSize;
 }
 
+/* HUF_decompress4X1_usingDTable_internal_body():
+ * Conditions :
+ * @dstSize >= 6
+ */
 FORCE_INLINE_TEMPLATE size_t
 HUF_decompress4X1_usingDTable_internal_body(
           void* dst,  size_t dstSize,
@@ -588,6 +594,7 @@ HUF_decompress4X1_usingDTable_internal_body(
 
         if (length4 > cSrcSize) return ERROR(corruption_detected);   /* overflow */
         if (opStart4 > oend) return ERROR(corruption_detected);      /* overflow */
+        if (dstSize < 6) return ERROR(corruption_detected);         /* stream 4-split doesn't work */
         CHECK_F( BIT_initDStream(&bitD1, istart1, length1) );
         CHECK_F( BIT_initDStream(&bitD2, istart2, length2) );
         CHECK_F( BIT_initDStream(&bitD3, istart3, length3) );
@@ -673,8 +680,7 @@ HUF_decompress4X1_usingDTable_internal_bmi2_asm(
     const BYTE* const iend = (const BYTE*)cSrc + 6;
     BYTE* const oend = (BYTE*)dst + dstSize;
     HUF_DecompressAsmArgs args;
-    {
-        size_t const ret = HUF_DecompressAsmArgs_init(&args, dst, dstSize, cSrc, cSrcSize, DTable);
+    {   size_t const ret = HUF_DecompressAsmArgs_init(&args, dst, dstSize, cSrc, cSrcSize, DTable);
         FORWARD_IF_ERROR(ret, "Failed to init asm args");
         if (ret != 0)
             return HUF_decompress4X1_usingDTable_internal_bmi2(dst, dstSize, cSrc, cSrcSize, DTable);
@@ -694,8 +700,7 @@ HUF_decompress4X1_usingDTable_internal_bmi2_asm(
     (void)iend;
 
     /* finish bit streams one by one. */
-    {
-        size_t const segmentSize = (dstSize+3) / 4;
+    {   size_t const segmentSize = (dstSize+3) / 4;
         BYTE* segmentEnd = (BYTE*)dst;
         int i;
         for (i = 0; i < 4; ++i) {
@@ -1240,6 +1245,11 @@ HUF_decompress1X2_usingDTable_internal_body(
     /* decoded size */
     return dstSize;
 }
+
+/* HUF_decompress4X2_usingDTable_internal_body():
+ * Conditions:
+ * @dstSize >= 6
+ */
 FORCE_INLINE_TEMPLATE size_t
 HUF_decompress4X2_usingDTable_internal_body(
           void* dst,  size_t dstSize,
@@ -1280,8 +1290,9 @@ HUF_decompress4X2_usingDTable_internal_body(
         DTableDesc const dtd = HUF_getDTableDesc(DTable);
         U32 const dtLog = dtd.tableLog;
 
-        if (length4 > cSrcSize) return ERROR(corruption_detected);   /* overflow */
-        if (opStart4 > oend) return ERROR(corruption_detected);      /* overflow */
+        if (length4 > cSrcSize) return ERROR(corruption_detected);  /* overflow */
+        if (opStart4 > oend) return ERROR(corruption_detected);     /* overflow */
+        if (dstSize < 6) return ERROR(corruption_detected);         /* stream 4-split doesn't work */
         CHECK_F( BIT_initDStream(&bitD1, istart1, length1) );
         CHECK_F( BIT_initDStream(&bitD2, istart2, length2) );
         CHECK_F( BIT_initDStream(&bitD3, istart3, length3) );
